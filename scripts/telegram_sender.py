@@ -1,8 +1,11 @@
 """
 Telegram Sender for Daily News.
 Handles sending formatted news messages to a Telegram channel/chat.
+Splits overview and individual news items into separate messages.
 """
 
+import re
+import time
 import requests
 from dataclasses import dataclass
 
@@ -12,11 +15,15 @@ class TelegramResult:
     """Result of a Telegram send operation."""
     success: bool
     message_id: int | None = None
+    messages_sent: int = 0
     error: str | None = None
 
 
 # Telegram message limits
 MAX_MESSAGE_LENGTH = 4096
+
+# Delay between messages to avoid rate limiting (in seconds)
+MESSAGE_DELAY = 0.5
 
 
 def send_message(
@@ -62,7 +69,7 @@ def send_message(
         
         if response_data.get("ok"):
             message_id = response_data.get("result", {}).get("message_id")
-            return TelegramResult(success=True, message_id=message_id)
+            return TelegramResult(success=True, message_id=message_id, messages_sent=1)
         else:
             error_desc = response_data.get("description", "Unknown error")
             # If Markdown parsing fails, try without parse_mode
@@ -85,95 +92,79 @@ def send_message(
         return TelegramResult(success=False, error=f"Unexpected error: {str(e)}")
 
 
-def split_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> list[str]:
+def truncate_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> str:
     """
-    Split a long message into chunks that fit Telegram's limit.
-    Tries to split at newlines for cleaner breaks.
-    
-    Args:
-        text: The text to split
-        max_length: Maximum length per chunk
-        
-    Returns:
-        List of text chunks
+    Truncate a message to fit Telegram's limit, trying to cut at sentence boundaries.
     """
     if len(text) <= max_length:
-        return [text]
+        return text
     
-    chunks = []
-    current_chunk = ""
+    # Reserve space for truncation indicator
+    max_len = max_length - 20
     
-    # Split by lines first
-    lines = text.split("\n")
+    # Try to cut at the last sentence boundary
+    truncated = text[:max_len]
     
-    for line in lines:
-        # If adding this line would exceed limit
-        if len(current_chunk) + len(line) + 1 > max_length:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-                current_chunk = ""
-            
-            # If single line is too long, split it by words
-            if len(line) > max_length:
-                words = line.split(" ")
-                for word in words:
-                    if len(current_chunk) + len(word) + 1 > max_length:
-                        if current_chunk:
-                            chunks.append(current_chunk.strip())
-                        current_chunk = word + " "
-                    else:
-                        current_chunk += word + " "
-            else:
-                current_chunk = line + "\n"
-        else:
-            current_chunk += line + "\n"
+    # Find last sentence end
+    for end_char in ["。", ".", "！", "!", "？", "?"]:
+        last_idx = truncated.rfind(end_char)
+        if last_idx > max_len // 2:  # Only if it's past halfway
+            return truncated[:last_idx + 1] + "\n\n⋯ (訊息過長，已截斷)"
     
-    if current_chunk.strip():
-        chunks.append(current_chunk.strip())
+    # Find last newline
+    last_newline = truncated.rfind("\n")
+    if last_newline > max_len // 2:
+        return truncated[:last_newline] + "\n\n⋯ (訊息過長，已截斷)"
     
-    return chunks
+    return truncated + "\n\n⋯ (訊息過長，已截斷)"
 
 
-def send_long_message(
-    bot_token: str,
-    chat_id: str,
-    text: str,
-    parse_mode: str = "Markdown",
-) -> list[TelegramResult]:
+def parse_news_content(content: str) -> tuple[str, list[str]]:
     """
-    Send a long message, automatically splitting if needed.
+    Parse news content into overview and individual news items.
     
     Args:
-        bot_token: Telegram Bot API token
-        chat_id: Target chat/channel ID
-        text: Message text (can be longer than 4096 chars)
-        parse_mode: Parse mode
+        content: The full news content in Markdown
         
     Returns:
-        List of TelegramResult for each chunk sent
+        Tuple of (overview_text, list_of_news_items)
     """
-    chunks = split_message(text)
-    results = []
+    # Split by --- separator
+    sections = re.split(r'\n---+\n', content)
     
-    for i, chunk in enumerate(chunks):
-        # Add part indicator for multi-part messages
-        if len(chunks) > 1:
-            header = f"📰 Part {i + 1}/{len(chunks)}\n\n"
-            chunk = header + chunk
+    if len(sections) <= 1:
+        # No separator found, try to split by numbered headers
+        # Look for patterns like "### 1.", "## 1.", "1.", etc.
+        news_pattern = r'(?=(?:^|\n)(?:#{1,3}\s*)?\d+[\.\)、])'
+        parts = re.split(news_pattern, content)
         
-        result = send_message(
-            bot_token=bot_token,
-            chat_id=chat_id,
-            text=chunk,
-            parse_mode=parse_mode,
-        )
-        results.append(result)
+        if len(parts) > 1:
+            overview = parts[0].strip()
+            news_items = [p.strip() for p in parts[1:] if p.strip()]
+            return overview, news_items
         
-        # If one part fails, log but continue with others
-        if not result.success:
-            print(f"[Telegram] Failed to send part {i + 1}: {result.error}")
+        # Fallback: return whole content as overview
+        return content.strip(), []
     
-    return results
+    # First section is usually overview/header
+    overview = sections[0].strip()
+    
+    # Rest are news items
+    news_items = [s.strip() for s in sections[1:] if s.strip()]
+    
+    return overview, news_items
+
+
+def format_overview_message(overview: str, date_str: str) -> str:
+    """Format the overview section as a Telegram message."""
+    header = f"🗞️ *每日新聞總覽 - {date_str}*\n\n"
+    return header + overview
+
+
+def format_news_item_message(item: str, index: int, total: int) -> str:
+    """Format a single news item as a Telegram message."""
+    header = f"📰 *新聞 {index}/{total}*\n\n"
+    return header + item
 
 
 def send_news_digest(
@@ -181,53 +172,105 @@ def send_news_digest(
     chat_id: str,
     news_content: str,
     date_str: str,
+    progress_callback: callable = None,
 ) -> TelegramResult:
     """
-    Send a formatted news digest to Telegram.
+    Send a formatted news digest to Telegram as multiple messages.
+    
+    Sends:
+    1. Overview message first
+    2. Each news item as a separate message
     
     Args:
         bot_token: Telegram Bot API token
         chat_id: Target chat/channel ID
         news_content: The news content in Markdown
         date_str: Date string for the header
+        progress_callback: Optional callback(current, total) for progress updates
         
     Returns:
-        TelegramResult (uses first result if message was split)
+        TelegramResult with overall status
     """
-    # Add header
-    header = f"🗞️ *Daily News Digest - {date_str}*\n\n"
-    full_message = header + news_content
+    # Parse content into overview and news items
+    overview, news_items = parse_news_content(news_content)
     
-    # Add footer
-    footer = "\n\n---\n_Generated by Daily News Aggregator_"
-    full_message += footer
+    total_messages = 1 + len(news_items)  # 1 for overview
+    messages_sent = 0
+    first_message_id = None
+    errors = []
     
-    results = send_long_message(
-        bot_token=bot_token,
-        chat_id=chat_id,
-        text=full_message,
-    )
+    # Send overview first
+    if progress_callback:
+        progress_callback(1, total_messages, "總覽")
     
-    # Return overall success status
-    if not results:
-        return TelegramResult(success=False, error="No messages sent")
+    overview_msg = format_overview_message(overview, date_str)
+    overview_msg = truncate_message(overview_msg)
     
-    # Consider it successful if at least the first part was sent
-    all_success = all(r.success for r in results)
-    first_result = results[0]
-    
-    if all_success:
-        return TelegramResult(
-            success=True,
-            message_id=first_result.message_id,
-        )
+    result = send_message(bot_token, chat_id, overview_msg)
+    if result.success:
+        messages_sent += 1
+        first_message_id = result.message_id
+        print(f"   [1/{total_messages}] ✅ 已發送總覽")
     else:
-        failed_count = sum(1 for r in results if not r.success)
+        errors.append(f"Overview: {result.error}")
+        print(f"   [1/{total_messages}] ❌ 總覽發送失敗: {result.error}")
+    
+    # Send each news item
+    for i, item in enumerate(news_items, start=1):
+        # Rate limiting delay
+        time.sleep(MESSAGE_DELAY)
+        
+        msg_num = i + 1  # +1 because overview is message 1
+        
+        if progress_callback:
+            progress_callback(msg_num, total_messages, f"新聞 {i}")
+        
+        item_msg = format_news_item_message(item, i, len(news_items))
+        item_msg = truncate_message(item_msg)
+        
+        result = send_message(bot_token, chat_id, item_msg)
+        if result.success:
+            messages_sent += 1
+            print(f"   [{msg_num}/{total_messages}] ✅ 已發送新聞 {i}")
+            if first_message_id is None:
+                first_message_id = result.message_id
+        else:
+            errors.append(f"News {i}: {result.error}")
+            print(f"   [{msg_num}/{total_messages}] ❌ 新聞 {i} 發送失敗: {result.error}")
+    
+    # If no items were parsed, send as single long message
+    if not news_items:
+        print("   [Info] 未能解析新聞項目，以單一訊息發送...")
+        full_msg = format_overview_message(news_content, date_str)
+        full_msg = truncate_message(full_msg)
+        
+        result = send_message(bot_token, chat_id, full_msg)
+        if result.success:
+            return TelegramResult(
+                success=True,
+                message_id=result.message_id,
+                messages_sent=1,
+            )
+        else:
+            return TelegramResult(
+                success=False,
+                error=result.error,
+            )
+    
+    # Return overall result
+    if messages_sent == 0:
         return TelegramResult(
-            success=first_result.success,
-            message_id=first_result.message_id,
-            error=f"{failed_count}/{len(results)} parts failed to send",
+            success=False,
+            error="; ".join(errors) if errors else "No messages sent",
         )
+    
+    # Partial success is still considered success
+    return TelegramResult(
+        success=True,
+        message_id=first_message_id,
+        messages_sent=messages_sent,
+        error=f"{len(errors)} 則訊息發送失敗" if errors else None,
+    )
 
 
 if __name__ == "__main__":

@@ -2,31 +2,31 @@
   "ai_tech": {
     "name": "AI & Tech Focus",
     "description": "Latest AI, ML, and tech news from global sources",
-    "prompt": "使用 news-aggregator-skill 如意如意，帮我从 Hacker News、GitHub Trending 和 Product Hunt 收集今天最重要的 10 条 AI 和科技新闻。请用中英双语总结每条新闻，并提供你的见解分析。输出格式为 Markdown。",
+    "prompt": "使用 news-aggregator-skill 如意如意，幫我從 Hacker News、GitHub Trending 和 Product Hunt 收集今天最重要的 10 條 AI 和科技新聞。\n\n請用繁體中文輸出，格式要求如下：\n\n1. 首先輸出「總覽」區塊，包含：\n   - 今日主題關鍵詞（3-5個）\n   - 整體趨勢洞察（2-3句話）\n\n2. 然後輸出 10 條新聞，每條新聞必須包含：\n   - 標題（保留英文原標題）\n   - 來源平台\n   - 新聞描述（繁體中文，2-3句話）\n   - 重點摘要（繁體中文，為什麼這條新聞重要）\n   - 思考問題（根據這條新聞，提出一個最值得深思的問題）\n\n請用 Markdown 格式輸出，每條新聞用 --- 分隔。",
     "sources": ["hackernews", "github", "producthunt"]
   },
   "china_tech": {
     "name": "China Tech",
     "description": "Chinese tech ecosystem news and trends",
-    "prompt": "使用 news-aggregator-skill 如意如意，帮我从 36氪、腾讯新闻和微博热搜收集今天最重要的 10 条科技新闻。请总结每条新闻并提供见解分析。输出格式为 Markdown。",
+    "prompt": "使用 news-aggregator-skill 如意如意，幫我從 36氪、騰訊新聞和微博熱搜收集今天最重要的 10 條科技新聞。\n\n請用繁體中文輸出，格式要求如下：\n\n1. 首先輸出「總覽」區塊，包含：\n   - 今日主題關鍵詞（3-5個）\n   - 整體趨勢洞察（2-3句話）\n\n2. 然後輸出 10 條新聞，每條新聞必須包含：\n   - 標題（可保留原標題）\n   - 來源平台\n   - 新聞描述（繁體中文，2-3句話）\n   - 重點摘要（繁體中文，為什麼這條新聞重要）\n   - 思考問題（根據這條新聞，提出一個最值得深思的問題）\n\n請用 Markdown 格式輸出，每條新聞用 --- 分隔。",
     "sources": ["36kr", "tencent", "weibo"]
   },
   "global_scan": {
     "name": "Global Full Scan",
     "description": "Comprehensive scan across all available sources",
-    "prompt": "使用 news-aggregator-skill 如意如意，执行全网扫描，收集今天全球最重要的 10 条热点新闻。请总结每条新闻并提供见解分析。输出格式为 Markdown。",
+    "prompt": "使用 news-aggregator-skill 如意如意，執行全網掃描，收集今天全球最重要的 10 條熱點新聞。\n\n請用繁體中文輸出，格式要求如下：\n\n1. 首先輸出「總覽」區塊，包含：\n   - 今日主題關鍵詞（3-5個）\n   - 整體趨勢洞察（2-3句話）\n\n2. 然後輸出 10 條新聞，每條新聞必須包含：\n   - 標題（保留英文原標題）\n   - 來源平台\n   - 新聞描述（繁體中文，2-3句話）\n   - 重點摘要（繁體中文，為什麼這條新聞重要）\n   - 思考問題（根據這條新聞，提出一個最值得深思的問題）\n\n請用 Markdown 格式輸出，每條新聞用 --- 分隔。",
     "sources": ["all"]
   },
   "finance": {
     "name": "Finance & Markets",
     "description": "Financial news and market trends",
-    "prompt": "使用 news-aggregator-skill 如意如意，帮我从华尔街见闻收集今天最重要的 10 条财经新闻。请总结每条新闻并提供市场见解分析。输出格式为 Markdown。",
+    "prompt": "使用 news-aggregator-skill 如意如意，幫我從華爾街見聞收集今天最重要的 10 條財經新聞。\n\n請用繁體中文輸出，格式要求如下：\n\n1. 首先輸出「總覽」區塊，包含：\n   - 今日主題關鍵詞（3-5個）\n   - 整體趨勢洞察（2-3句話）\n\n2. 然後輸出 10 條新聞，每條新聞必須包含：\n   - 標題（保留英文原標題）\n   - 來源平台\n   - 新聞描述（繁體中文，2-3句話）\n   - 重點摘要（繁體中文，為什麼這條新聞重要）\n   - 思考問題（根據這條新聞，提出一個最值得深思的問題）\n\n請用 Markdown 格式輸出，每條新聞用 --- 分隔。",
     "sources": ["wallstreetcn"]
   },
   "dev_community": {
     "name": "Developer Community",
     "description": "News from developer communities and open source",
-    "prompt": "使用 news-aggregator-skill 如意如意，帮我从 GitHub Trending、Hacker News 和 V2EX 收集今天最重要的 10 条开发者社区新闻。请总结每条新闻并提供见解分析。输出格式为 Markdown。",
+    "prompt": "使用 news-aggregator-skill 如意如意，幫我從 GitHub Trending、Hacker News 和 V2EX 收集今天最重要的 10 條開發者社群新聞。\n\n請用繁體中文輸出，格式要求如下：\n\n1. 首先輸出「總覽」區塊，包含：\n   - 今日主題關鍵詞（3-5個）\n   - 整體趨勢洞察（2-3句話）\n\n2. 然後輸出 10 條新聞，每條新聞必須包含：\n   - 標題（保留英文原標題）\n   - 來源平台\n   - 新聞描述（繁體中文，2-3句話）\n   - 重點摘要（繁體中文，為什麼這條新聞重要）\n   - 思考問題（根據這條新聞，提出一個最值得深思的問題）\n\n請用 Markdown 格式輸出，每條新聞用 --- 分隔。",
     "sources": ["github", "hackernews", "v2ex"]
   }
 }

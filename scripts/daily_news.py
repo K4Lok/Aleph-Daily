@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,24 @@ from scripts.skill_manager import ensure_skill_installed
 from scripts.claude_runner import run_news_aggregator
 from scripts.telegram_sender import send_news_digest
 from scripts.github_pusher import push_news_file
+
+
+def count_news_items(content: str) -> int:
+    """
+    Count the number of news items in the content.
+    Looks for patterns like numbered headers or --- separators.
+    """
+    # Count --- separators
+    separator_count = len(re.findall(r'\n---+\n', content))
+    if separator_count > 0:
+        return separator_count
+    
+    # Count numbered headers like "### 1.", "## 1.", "1.", etc.
+    numbered_headers = re.findall(r'(?:^|\n)(?:#{1,3}\s*)?\d+[\.\)、]', content)
+    if numbered_headers:
+        return len(numbered_headers)
+    
+    return 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -210,6 +229,10 @@ def main() -> int:
         print("❌ Error: Preset has no prompt configured")
         return 1
     
+    print("   ⏳ 正在收集新聞，請稍候...")
+    print("   (這可能需要 1-3 分鐘，取決於新聞來源)")
+    print()
+    
     response = run_news_aggregator(
         preset_prompt=prompt,
         model=model,
@@ -226,7 +249,9 @@ def main() -> int:
         print(f"   Content length: {len(news_content) if news_content else 0} chars")
         return 1
     
-    print(f"✅ Collected news ({len(news_content)} chars)")
+    # Count news items for display
+    news_count = count_news_items(news_content)
+    print(f"✅ 成功收集 {news_count} 則新聞 ({len(news_content)} chars)")
     print()
     
     # =========================================
@@ -243,31 +268,35 @@ def main() -> int:
     # Track results for final summary
     results = {
         "news_collected": True,
+        "news_count": news_count,
         "file_saved": True,
         "telegram_sent": None,
+        "telegram_count": 0,
         "github_pushed": None,
     }
     
     # =========================================
     # Step 4: Send to Telegram (non-blocking)
     # =========================================
+    print("-" * 40)
+    print("Step 4: Sending to Telegram...")
+    print("-" * 40)
+    
     if args.dry_run or args.skip_telegram:
-        print("-" * 40)
-        print("Step 4: Telegram - SKIPPED")
-        print("-" * 40)
+        print("⏭️  Skipped (--dry-run or --skip-telegram)")
         results["telegram_sent"] = "skipped"
+        results["telegram_count"] = 0
     else:
-        print("-" * 40)
-        print("Step 4: Sending to Telegram...")
-        print("-" * 40)
-        
         # Validate Telegram config
         tg_valid, tg_error = settings.validate_telegram()
         if not tg_valid:
-            print(f"⚠️  Telegram not configured: {tg_error}")
-            results["telegram_sent"] = False
+            print(f"⏭️  Skipped: {tg_error}")
+            print("   To enable: Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to .env")
+            results["telegram_sent"] = "not_configured"
+            results["telegram_count"] = 0
         else:
             try:
+                print("   正在發送訊息到 Telegram...")
                 tg_result = send_news_digest(
                     bot_token=settings.telegram_bot_token,
                     chat_id=settings.telegram_chat_id,
@@ -275,8 +304,12 @@ def main() -> int:
                     date_str=date_str,
                 )
                 
+                results["telegram_count"] = tg_result.messages_sent
+                
                 if tg_result.success:
-                    print(f"✅ Sent to Telegram (message_id: {tg_result.message_id})")
+                    print(f"✅ 已發送 {tg_result.messages_sent} 則訊息到 Telegram")
+                    if tg_result.error:
+                        print(f"   ⚠️  {tg_result.error}")
                     results["telegram_sent"] = True
                 else:
                     print(f"⚠️  Telegram failed: {tg_result.error}")
@@ -284,26 +317,26 @@ def main() -> int:
             except Exception as e:
                 print(f"⚠️  Telegram error: {str(e)}")
                 results["telegram_sent"] = False
+                results["telegram_count"] = 0
     print()
     
     # =========================================
     # Step 5: Push to GitHub (non-blocking)
     # =========================================
+    print("-" * 40)
+    print("Step 5: Pushing to GitHub...")
+    print("-" * 40)
+    
     if args.dry_run or args.skip_github:
-        print("-" * 40)
-        print("Step 5: GitHub - SKIPPED")
-        print("-" * 40)
+        print("⏭️  Skipped (--dry-run or --skip-github)")
         results["github_pushed"] = "skipped"
     else:
-        print("-" * 40)
-        print("Step 5: Pushing to GitHub...")
-        print("-" * 40)
-        
         # Validate GitHub config
         gh_valid, gh_error = settings.validate_github()
         if not gh_valid:
-            print(f"⚠️  GitHub not configured: {gh_error}")
-            results["github_pushed"] = False
+            print(f"⏭️  Skipped: {gh_error}")
+            print("   To enable: Add GITHUB_TOKEN and GITHUB_REPO to .env")
+            results["github_pushed"] = "not_configured"
         else:
             try:
                 gh_result = push_news_file(
@@ -332,28 +365,32 @@ def main() -> int:
     # Final Summary
     # =========================================
     print("=" * 60)
-    print("📊 Summary")
+    print("📊 執行摘要")
     print("=" * 60)
-    print(f"  📰 News Collected: ✅")
-    print(f"  💾 File Saved: ✅ ({file_path.name})")
+    print(f"  📰 新聞收集: ✅ ({results['news_count']} 則)")
+    print(f"  💾 檔案儲存: ✅ ({file_path.name})")
     
     if results["telegram_sent"] == "skipped":
-        print(f"  📱 Telegram: ⏭️  Skipped")
+        print(f"  📱 Telegram: ⏭️  已跳過")
+    elif results["telegram_sent"] == "not_configured":
+        print(f"  📱 Telegram: ⏭️  未設定")
     elif results["telegram_sent"]:
-        print(f"  📱 Telegram: ✅ Sent")
+        print(f"  📱 Telegram: ✅ 已發送 ({results['telegram_count']} 則訊息)")
     else:
-        print(f"  📱 Telegram: ❌ Failed")
+        print(f"  📱 Telegram: ❌ 發送失敗")
     
     if results["github_pushed"] == "skipped":
-        print(f"  🐙 GitHub: ⏭️  Skipped")
+        print(f"  🐙 GitHub: ⏭️  已跳過")
+    elif results["github_pushed"] == "not_configured":
+        print(f"  🐙 GitHub: ⏭️  未設定")
     elif results["github_pushed"]:
-        print(f"  🐙 GitHub: ✅ Pushed")
+        print(f"  🐙 GitHub: ✅ 已推送")
     else:
-        print(f"  🐙 GitHub: ❌ Failed")
+        print(f"  🐙 GitHub: ❌ 推送失敗")
     
     print()
     print("=" * 60)
-    print("✨ Daily news aggregation complete!")
+    print("✨ 每日新聞聚合完成！")
     print("=" * 60)
     
     return 0
