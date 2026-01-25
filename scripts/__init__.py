@@ -1,0 +1,3 @@
+"""
+Daily News Aggregator Scripts.
+"""
