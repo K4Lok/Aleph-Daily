@@ -2,12 +2,24 @@
 Telegram Sender for Daily News.
 Handles sending formatted news messages to a Telegram channel/chat.
 Splits overview and individual news items into separate messages.
+Uses telegramify-markdown for proper MarkdownV2 formatting.
 """
 
 import re
 import time
 import requests
 from dataclasses import dataclass
+
+import telegramify_markdown
+from telegramify_markdown.customize import get_runtime_config
+
+# Configure telegramify-markdown
+_config = get_runtime_config()
+_config.markdown_symbol.head_level_1 = "📌"
+_config.markdown_symbol.head_level_2 = "📋"
+_config.markdown_symbol.head_level_3 = "▪️"
+_config.markdown_symbol.link = "🔗"
+_config.strict_markdown = False  # Allow __underline__ as underline
 
 
 @dataclass
@@ -26,11 +38,32 @@ MAX_MESSAGE_LENGTH = 4096
 MESSAGE_DELAY = 0.5
 
 
+def convert_markdown_to_telegram(text: str) -> str:
+    """
+    Convert standard Markdown to Telegram MarkdownV2 format.
+    
+    Args:
+        text: Standard markdown text
+        
+    Returns:
+        Telegram MarkdownV2 formatted text
+    """
+    try:
+        return telegramify_markdown.markdownify(
+            text,
+            max_line_length=None,
+            normalize_whitespace=False,
+        )
+    except Exception as e:
+        print(f"   [Warning] Markdown conversion failed: {e}, using original text")
+        return text
+
+
 def send_message(
     bot_token: str,
     chat_id: str,
     text: str,
-    parse_mode: str = "Markdown",
+    parse_mode: str = "MarkdownV2",
     disable_web_page_preview: bool = True,
 ) -> TelegramResult:
     """
@@ -40,7 +73,7 @@ def send_message(
         bot_token: Telegram Bot API token
         chat_id: Target chat/channel ID
         text: Message text to send
-        parse_mode: Parse mode (Markdown, HTML, or empty)
+        parse_mode: Parse mode (MarkdownV2, HTML, or empty)
         disable_web_page_preview: Whether to disable link previews
         
     Returns:
@@ -72,9 +105,9 @@ def send_message(
             return TelegramResult(success=True, message_id=message_id, messages_sent=1)
         else:
             error_desc = response_data.get("description", "Unknown error")
-            # If Markdown parsing fails, try without parse_mode
+            # If MarkdownV2 parsing fails, try without parse_mode
             if "can't parse" in error_desc.lower() and parse_mode:
-                print("[Telegram] Markdown parsing failed, retrying without formatting...")
+                print(f"   [Warning] {parse_mode} parsing failed, retrying without formatting...")
                 return send_message(
                     bot_token=bot_token,
                     chat_id=chat_id,
@@ -109,19 +142,25 @@ def truncate_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> str:
     for end_char in ["。", ".", "！", "!", "？", "?"]:
         last_idx = truncated.rfind(end_char)
         if last_idx > max_len // 2:  # Only if it's past halfway
-            return truncated[:last_idx + 1] + "\n\n⋯ (訊息過長，已截斷)"
+            return truncated[:last_idx + 1] + "\n\n⋯ \\(訊息過長，已截斷\\)"
     
     # Find last newline
     last_newline = truncated.rfind("\n")
     if last_newline > max_len // 2:
-        return truncated[:last_newline] + "\n\n⋯ (訊息過長，已截斷)"
+        return truncated[:last_newline] + "\n\n⋯ \\(訊息過長，已截斷\\)"
     
-    return truncated + "\n\n⋯ (訊息過長，已截斷)"
+    return truncated + "\n\n⋯ \\(訊息過長，已截斷\\)"
 
 
 def parse_news_content(content: str) -> tuple[str, list[str]]:
     """
     Parse news content into overview and individual news items.
+    
+    The overview includes:
+    - The intro text before the summary section
+    - The full summary section (## 總覽) with keywords, insights, and statistics
+    
+    News items are the individual news articles separated by ---.
     
     Args:
         content: The full news content in Markdown
@@ -129,12 +168,26 @@ def parse_news_content(content: str) -> tuple[str, list[str]]:
     Returns:
         Tuple of (overview_text, list_of_news_items)
     """
+    # Remove file header added by save_news_to_file
+    # Pattern: # Daily News - YYYY-MM-DD\n\n> Generated on YYYY-MM-DD HH:MM:SS\n\n---
+    content = re.sub(
+        r'^# Daily News - \d{4}-\d{2}-\d{2}\s*\n+>\s*Generated on[^\n]*\n+---\n*',
+        '',
+        content,
+        flags=re.MULTILINE
+    )
+    
     # Split by --- separator
     sections = re.split(r'\n---+\n', content)
     
+    # Filter out empty sections
+    sections = [s.strip() for s in sections if s.strip()]
+    
+    # Filter out the last "complete report saved" message
+    sections = [s for s in sections if not s.startswith("完整的報告已保存")]
+    
     if len(sections) <= 1:
         # No separator found, try to split by numbered headers
-        # Look for patterns like "### 1.", "## 1.", "1.", etc.
         news_pattern = r'(?=(?:^|\n)(?:#{1,3}\s*)?\d+[\.\)、])'
         parts = re.split(news_pattern, content)
         
@@ -146,24 +199,68 @@ def parse_news_content(content: str) -> tuple[str, list[str]]:
         # Fallback: return whole content as overview
         return content.strip(), []
     
-    # First section is usually overview/header
-    overview = sections[0].strip()
+    # Identify the overview section(s)
+    # Overview = intro text + ## 總覽 section
+    # News items = everything after that starts with **標題** pattern
+    overview_parts = []
+    news_items = []
+    in_news_section = False
     
-    # Rest are news items
-    news_items = [s.strip() for s in sections[1:] if s.strip()]
+    for section in sections:
+        # Check if this section is a news item (starts with bold title pattern)
+        is_news_item = section.startswith("**") and "來源平台" in section
+        
+        if is_news_item:
+            in_news_section = True
+            news_items.append(section)
+        elif in_news_section:
+            # Once we're in news section, everything else is a news item
+            # (unless it's the "report saved" message which was already filtered)
+            news_items.append(section)
+        else:
+            # Still in overview section
+            overview_parts.append(section)
+    
+    # Join overview parts with proper formatting (no --- separators in the message)
+    overview = "\n\n".join(overview_parts) if overview_parts else ""
     
     return overview, news_items
 
 
-def format_overview_message(overview: str, date_str: str) -> str:
+def build_github_file_url(repo: str, branch: str, file_path: str) -> str:
+    """
+    Build the GitHub URL for a news file.
+    
+    Args:
+        repo: GitHub repository (username/repo)
+        branch: Branch name
+        file_path: Relative path to the file (e.g., news/2026-01-26.md)
+        
+    Returns:
+        Full GitHub URL to the file
+    """
+    return f"https://github.com/{repo}/blob/{branch}/{file_path}"
+
+
+def format_overview_message(
+    overview: str,
+    date_str: str,
+    github_url: str | None = None,
+) -> str:
     """Format the overview section as a Telegram message."""
-    header = f"🗞️ *每日新聞總覽 - {date_str}*\n\n"
-    return header + overview
+    header = f"🗞️ **每日新聞總覽 - {date_str}**\n\n"
+    content = header + overview
+    
+    # Add GitHub link at the bottom if provided
+    if github_url:
+        content += f"\n\n---\n\n📎 [完整報告]({github_url})"
+    
+    return content
 
 
 def format_news_item_message(item: str, index: int, total: int) -> str:
     """Format a single news item as a Telegram message."""
-    header = f"📰 *新聞 {index}/{total}*\n\n"
+    header = f"📰 **新聞 {index}/{total}**\n\n"
     return header + item
 
 
@@ -172,13 +269,15 @@ def send_news_digest(
     chat_id: str,
     news_content: str,
     date_str: str,
+    github_repo: str | None = None,
+    github_branch: str = "main",
     progress_callback: callable = None,
 ) -> TelegramResult:
     """
     Send a formatted news digest to Telegram as multiple messages.
     
     Sends:
-    1. Overview message first
+    1. Overview message first (includes summary + GitHub link)
     2. Each news item as a separate message
     
     Args:
@@ -186,6 +285,8 @@ def send_news_digest(
         chat_id: Target chat/channel ID
         news_content: The news content in Markdown
         date_str: Date string for the header
+        github_repo: Optional GitHub repo for file link (username/repo)
+        github_branch: GitHub branch name (default: main)
         progress_callback: Optional callback(current, total) for progress updates
         
     Returns:
@@ -199,14 +300,22 @@ def send_news_digest(
     first_message_id = None
     errors = []
     
+    # Build GitHub URL if repo is provided
+    github_url = None
+    if github_repo:
+        file_path = f"news/{date_str}.md"
+        github_url = build_github_file_url(github_repo, github_branch, file_path)
+    
     # Send overview first
     if progress_callback:
         progress_callback(1, total_messages, "總覽")
     
-    overview_msg = format_overview_message(overview, date_str)
-    overview_msg = truncate_message(overview_msg)
+    overview_msg = format_overview_message(overview, date_str, github_url)
+    # Convert to Telegram MarkdownV2 format
+    overview_msg_converted = convert_markdown_to_telegram(overview_msg)
+    overview_msg_converted = truncate_message(overview_msg_converted)
     
-    result = send_message(bot_token, chat_id, overview_msg)
+    result = send_message(bot_token, chat_id, overview_msg_converted)
     if result.success:
         messages_sent += 1
         first_message_id = result.message_id
@@ -226,9 +335,11 @@ def send_news_digest(
             progress_callback(msg_num, total_messages, f"新聞 {i}")
         
         item_msg = format_news_item_message(item, i, len(news_items))
-        item_msg = truncate_message(item_msg)
+        # Convert to Telegram MarkdownV2 format
+        item_msg_converted = convert_markdown_to_telegram(item_msg)
+        item_msg_converted = truncate_message(item_msg_converted)
         
-        result = send_message(bot_token, chat_id, item_msg)
+        result = send_message(bot_token, chat_id, item_msg_converted)
         if result.success:
             messages_sent += 1
             print(f"   [{msg_num}/{total_messages}] ✅ 已發送新聞 {i}")
@@ -241,10 +352,11 @@ def send_news_digest(
     # If no items were parsed, send as single long message
     if not news_items:
         print("   [Info] 未能解析新聞項目，以單一訊息發送...")
-        full_msg = format_overview_message(news_content, date_str)
-        full_msg = truncate_message(full_msg)
+        full_msg = format_overview_message(news_content, date_str, github_url)
+        full_msg_converted = convert_markdown_to_telegram(full_msg)
+        full_msg_converted = truncate_message(full_msg_converted)
         
-        result = send_message(bot_token, chat_id, full_msg)
+        result = send_message(bot_token, chat_id, full_msg_converted)
         if result.success:
             return TelegramResult(
                 success=True,

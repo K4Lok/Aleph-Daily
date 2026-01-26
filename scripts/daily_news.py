@@ -297,11 +297,15 @@ def main() -> int:
         else:
             try:
                 print("   正在發送訊息到 Telegram...")
+                # Pass GitHub info for the file link in summary message
+                gh_repo = settings.github_repo if settings.validate_github()[0] else None
                 tg_result = send_news_digest(
                     bot_token=settings.telegram_bot_token,
                     chat_id=settings.telegram_chat_id,
                     news_content=news_content,
                     date_str=date_str,
+                    github_repo=gh_repo,
+                    github_branch=settings.github_branch,
                 )
                 
                 results["telegram_count"] = tg_result.messages_sent
