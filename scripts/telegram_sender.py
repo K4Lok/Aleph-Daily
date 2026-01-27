@@ -158,7 +158,7 @@ def parse_news_content(content: str) -> tuple[str, list[str]]:
     
     The overview includes:
     - The intro text before the summary section
-    - The full summary section (## 總覽) with keywords, insights, and statistics
+    - The full summary section (總覽) with keywords, insights, and statistics
     
     News items are the individual news articles separated by ---.
     
@@ -183,8 +183,8 @@ def parse_news_content(content: str) -> tuple[str, list[str]]:
     # Filter out empty sections
     sections = [s.strip() for s in sections if s.strip()]
     
-    # Filter out the last "complete report saved" message
-    sections = [s for s in sections if not s.startswith("完整的報告已保存")]
+    # Filter out common non-news sections
+    sections = [s for s in sections if not s.startswith("完整的報告已保存") and not s.startswith("完整報告已保存")]
     
     if len(sections) <= 1:
         # No separator found, try to split by numbered headers
@@ -199,23 +199,25 @@ def parse_news_content(content: str) -> tuple[str, list[str]]:
         # Fallback: return whole content as overview
         return content.strip(), []
     
-    # Identify the overview section(s)
-    # Overview = intro text + ## 總覽 section
-    # News items = everything after that starts with **標題** pattern
+    # Identify the overview section(s) vs news items
+    # News items typically have:
+    # - ### Title format (H3 heading)
+    # - 來源 or 來源平台 or 來源：
+    # - 🔗 連結 or 連結：
     overview_parts = []
     news_items = []
     in_news_section = False
     
     for section in sections:
-        # Check if this section is a news item (starts with bold title pattern)
-        is_news_item = section.startswith("**") and "來源平台" in section
+        # Check if this section is a news item
+        # Multiple patterns to detect news items:
+        is_news_item = _is_news_item(section)
         
         if is_news_item:
             in_news_section = True
             news_items.append(section)
         elif in_news_section:
             # Once we're in news section, everything else is a news item
-            # (unless it's the "report saved" message which was already filtered)
             news_items.append(section)
         else:
             # Still in overview section
@@ -225,6 +227,63 @@ def parse_news_content(content: str) -> tuple[str, list[str]]:
     overview = "\n\n".join(overview_parts) if overview_parts else ""
     
     return overview, news_items
+
+
+def _is_news_item(section: str) -> bool:
+    """
+    Check if a section is a news item based on common patterns.
+    
+    Args:
+        section: A section of text to check
+        
+    Returns:
+        True if the section appears to be a news item
+    """
+    # Pattern 1: Starts with # followed by number (e.g., "# 1.", "# 2.")
+    starts_with_numbered_h1 = bool(re.match(r'^#\s*\d+[\.\)、]', section))
+    
+    # Pattern 2: Starts with ### (H3 heading) - common for news titles
+    starts_with_h3 = section.startswith("###")
+    
+    # Pattern 3: Starts with ** (bold text) - old format
+    starts_with_bold = section.startswith("**")
+    
+    # Pattern 4: Contains source indicators
+    has_source = any(indicator in section for indicator in [
+        "來源：", "來源:", "來源平台", "**來源:**", "**來源：**",
+        "**來源平台**", "Hacker News", "GitHub Trending", "Product Hunt",
+    ])
+    
+    # Pattern 5: Contains link indicators
+    has_link = "🔗" in section or "連結：" in section or "連結:" in section
+    
+    # Pattern 6: Contains "熱度" (popularity/points)
+    has_popularity = "熱度" in section or "points" in section
+    
+    # Pattern 7: Contains thinking question indicator
+    has_thinking = "思考問題" in section or "**思考問題**" in section
+    
+    # Pattern 8: Contains summary indicator
+    has_summary = "重點摘要" in section or "**重點摘要**" in section
+    
+    # A section is a news item if it:
+    # - Starts with numbered H1 (# 1., # 2., etc.)
+    # - OR starts with H3 or bold AND has source/link/popularity indicators
+    # - OR has both source AND link indicators (regardless of heading)
+    # - OR has source AND (thinking question OR summary)
+    if starts_with_numbered_h1:
+        return True
+    
+    if (starts_with_h3 or starts_with_bold) and (has_source or has_link or has_popularity):
+        return True
+    
+    if has_source and has_link:
+        return True
+    
+    if has_source and (has_thinking or has_summary):
+        return True
+    
+    return False
 
 
 def build_github_file_url(repo: str, branch: str, file_path: str) -> str:

@@ -108,6 +108,12 @@ Examples:
         help="Timeout for Claude command in seconds (default: 300)",
     )
     
+    parser.add_argument(
+        "--no-streaming",
+        action="store_true",
+        help="Disable streaming output (use batch mode instead)",
+    )
+    
     return parser.parse_args()
 
 
@@ -229,14 +235,21 @@ def main() -> int:
         print("❌ Error: Preset has no prompt configured")
         return 1
     
-    print("   ⏳ 正在收集新聞，請稍候...")
-    print("   (這可能需要 1-3 分鐘，取決於新聞來源)")
-    print()
+    use_streaming = not args.no_streaming
+    if use_streaming:
+        print("   ⏳ 正在收集新聞（串流模式）...")
+        print("   (這可能需要 1-3 分鐘，取決於新聞來源)")
+        print()
+    else:
+        print("   ⏳ 正在收集新聞，請稍候...")
+        print("   (這可能需要 1-3 分鐘，取決於新聞來源)")
+        print()
     
     response = run_news_aggregator(
         preset_prompt=prompt,
         model=model,
         timeout=args.timeout,
+        streaming=use_streaming,
     )
     
     if not response.success:
