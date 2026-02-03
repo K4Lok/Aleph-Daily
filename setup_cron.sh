@@ -3,10 +3,11 @@
 # ===========================================
 # Aleph Daily News - Cron Job Setup Script
 # ===========================================
-# This script sets up a cron job to run daily_news.py at 10:30 AM Macau time
-# Usage: ./setup_cron.sh [hour] [minute]
-# Example: ./setup_cron.sh 10 30  (runs at 10:30 AM)
-# Example: ./setup_cron.sh       (uses default 10:30 AM)
+# This script sets up cron jobs for daily news aggregation:
+#   1. Morning tech news at 10:30 AM (preset: ai_tech)
+#   2. Evening finance news at 21:00 PM (preset: finance)
+#
+# Usage: ./setup_cron.sh
 # ===========================================
 
 set -e
@@ -18,10 +19,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Default time: 10:30 AM Macau time (CST/UTC+8)
-DEFAULT_HOUR=10
-DEFAULT_MINUTE=30
-
 # Get script directory (absolute path)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
@@ -29,9 +26,12 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_DIR="$HOME/Library/Logs/aleph-daily"
 LOG_FILE="$LOG_DIR/daily_news.log"
 
-# Parse arguments
-HOUR=${1:-$DEFAULT_HOUR}
-MINUTE=${2:-$DEFAULT_MINUTE}
+# ---- Scheduled Jobs Configuration ----
+# Format: "MINUTE HOUR PRESET TAG"
+JOBS=(
+    "30 10 ai_tech aleph-daily-tech"
+    "0 21 finance aleph-daily-finance"
+)
 
 echo_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 echo_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
@@ -157,17 +157,7 @@ else
     PYTHON_PATH=$(which python3)
 fi
 
-# Create the cron command
-create_cron_command() {
-    # Macau time is CST (UTC+8), no DST
-    # Cron uses the system's local timezone setting
-
-    cat <<EOF
-$MINUTE $HOUR * * * cd "$SCRIPT_DIR" && $PYTHON_PATH "$SCRIPT_DIR/scripts/daily_news.py" >> "$LOG_FILE" 2>&1
-EOF
-}
-
-# Remove existing cron job
+# Remove existing cron jobs
 remove_existing_cron() {
     echo_info "Removing existing cron jobs for Aleph Daily..."
 
@@ -178,16 +168,28 @@ remove_existing_cron() {
     echo ""
 }
 
-# Install new cron job
+# Install all scheduled cron jobs
 install_cron() {
-    echo_info "Installing new cron job..."
+    echo_info "Installing cron jobs..."
 
-    CRON_CMD=$(create_cron_command)
+    # Macau time is CST (UTC+8), no DST
+    # Cron uses the system's local timezone setting
 
-    # Add new cron job
-    (crontab -l 2>/dev/null; echo "$CRON_CMD # aleph-daily") | crontab -
+    EXISTING_CRON=$(crontab -l 2>/dev/null || true)
 
-    echo_success "Cron job installed!"
+    for job in "${JOBS[@]}"; do
+        read -r JOB_MINUTE JOB_HOUR JOB_PRESET JOB_TAG <<< "$job"
+
+        CRON_LINE="$JOB_MINUTE $JOB_HOUR * * * cd \"$SCRIPT_DIR\" && $PYTHON_PATH \"$SCRIPT_DIR/scripts/daily_news.py\" --preset $JOB_PRESET >> \"$LOG_FILE\" 2>&1 # $JOB_TAG"
+
+        EXISTING_CRON="$EXISTING_CRON
+$CRON_LINE"
+
+        echo_success "  [$JOB_TAG] $JOB_HOUR:$(printf '%02d' $JOB_MINUTE) daily → preset: $JOB_PRESET"
+    done
+
+    echo "$EXISTING_CRON" | crontab -
+
     echo ""
 }
 
@@ -197,7 +199,12 @@ show_summary() {
     echo "  Setup Complete!"
     echo "=========================================="
     echo ""
-    echo "Cron Schedule: $HOUR:$MINUTE AM daily (Macau/CST time)"
+    echo "Scheduled Jobs:"
+    for job in "${JOBS[@]}"; do
+        read -r JOB_MINUTE JOB_HOUR JOB_PRESET JOB_TAG <<< "$job"
+        echo "  - [$JOB_TAG] $(printf '%02d:%02d' $JOB_HOUR $JOB_MINUTE) daily → preset: $JOB_PRESET"
+    done
+    echo ""
     echo "Project Path:  $SCRIPT_DIR"
     echo "Python Path:   $PYTHON_PATH"
     echo "Log File:      $LOG_FILE"
@@ -208,12 +215,13 @@ show_summary() {
     echo "To view cron jobs:"
     echo "  crontab -l"
     echo ""
-    echo "To remove the cron job:"
-    echo "  crontab -e  # and delete the line containing 'aleph-daily'"
+    echo "To remove cron jobs:"
+    echo "  crontab -e  # and delete lines containing 'aleph-daily'"
     echo ""
     echo "To test manually:"
     echo "  cd $SCRIPT_DIR"
-    echo "  python3 scripts/daily_news.py --dry-run"
+    echo "  python3 scripts/daily_news.py --preset ai_tech --dry-run"
+    echo "  python3 scripts/daily_news.py --preset finance --dry-run"
     echo ""
     echo "=========================================="
 }
@@ -221,17 +229,6 @@ show_summary() {
 # Main execution
 main() {
     print_header
-
-    # Validate time input
-    if [ "$HOUR" -lt 0 ] || [ "$HOUR" -gt 23 ]; then
-        echo_error "Invalid hour: $HOUR. Must be between 0 and 23."
-        exit 1
-    fi
-    if [ "$MINUTE" -lt 0 ] || [ "$MINUTE" -gt 59 ]; then
-        echo_error "Invalid minute: $MINUTE. Must be between 0 and 59."
-        exit 1
-    fi
-
     check_dependencies
     install_python_deps
     check_env_file
