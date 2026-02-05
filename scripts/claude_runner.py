@@ -1,6 +1,6 @@
 """
-Claude Code CLI Runner.
-Wrapper for invoking Claude Code in non-interactive mode with proper permissions.
+CCS CLI Runner.
+Wrapper for invoking CCS (Claude Code Switch) in non-interactive mode with proper permissions.
 Supports streaming output for real-time progress display.
 """
 
@@ -40,10 +40,11 @@ def build_command(
     continue_session: bool = False,
     session_id: str | None = None,
     verbose: bool = False,
+    ccs_profile: str = "glm",
 ) -> list[str]:
     """
     Build the Claude CLI command with appropriate flags.
-    
+
     Args:
         prompt: The prompt to send to Claude
         model: Model to use (sonnet, opus, haiku, or full model ID)
@@ -52,11 +53,12 @@ def build_command(
         continue_session: Whether to continue the last session
         session_id: Specific session ID to resume
         verbose: Whether to enable verbose output (required for stream-json with -p)
-        
+        ccs_profile: CCS profile to use (default: "glm" for GLM LLM)
+
     Returns:
         List of command arguments
     """
-    cmd = ["claude", "-p", prompt]
+    cmd = ["ccs", ccs_profile, "-p", prompt]
     
     # Add model flag
     cmd.extend(["--model", model])
@@ -90,10 +92,11 @@ def run_claude(
     allowed_tools: list[str] | None = None,
     continue_session: bool = False,
     session_id: str | None = None,
+    ccs_profile: str = "glm",
 ) -> ClaudeResponse:
     """
     Run Claude Code CLI with the given prompt (non-streaming).
-    
+
     Args:
         prompt: The prompt to send to Claude
         model: Model to use (default: sonnet)
@@ -101,16 +104,17 @@ def run_claude(
         allowed_tools: List of tools to auto-approve
         continue_session: Whether to continue the last session
         session_id: Specific session ID to resume
-        
+        ccs_profile: CCS profile to use (default: "glm")
+
     Returns:
         ClaudeResponse with the result
     """
-    # Check if claude CLI is available
-    if not shutil.which("claude"):
+    # Check if ccs CLI is available
+    if not shutil.which("ccs"):
         return ClaudeResponse(
             success=False,
             content="",
-            error="Claude CLI not found. Please install Claude Code first.",
+            error="CCS CLI not found. Please install CCS first: npm install -g @kaitranntt/ccs",
         )
     
     cmd = build_command(
@@ -120,9 +124,10 @@ def run_claude(
         allowed_tools=allowed_tools,
         continue_session=continue_session,
         session_id=session_id,
+        ccs_profile=ccs_profile,
     )
     
-    print(f"[ClaudeRunner] Executing: {' '.join(cmd[:5])}...")  # Only show first 5 args
+    print(f"[CCSRunner] Executing: {' '.join(cmd[:5])}...")  # Only show first 5 args
     
     try:
         result = subprocess.run(
@@ -149,7 +154,7 @@ def run_claude(
                     return ClaudeResponse(
                         success=False,
                         content="",
-                        error=content or "Claude returned an error",
+                        error=content or "CCS returned an error",
                         session_id=session_id,
                         raw_output=raw_output,
                     )
@@ -182,20 +187,20 @@ def run_claude(
             return ClaudeResponse(
                 success=False,
                 content="",
-                error=result.stderr or "Claude returned empty output with error code",
+                error=result.stderr or "CCS returned empty output with error code",
             )
         
         return ClaudeResponse(
             success=False,
             content="",
-            error="Claude returned empty output",
+            error="CCS returned empty output",
         )
         
     except subprocess.TimeoutExpired as e:
         # Try to capture any partial output
         partial_stdout = e.stdout if hasattr(e, 'stdout') and e.stdout else ""
         partial_stderr = e.stderr if hasattr(e, 'stderr') and e.stderr else ""
-        error_msg = f"Claude command timed out after {timeout} seconds"
+        error_msg = f"CCS command timed out after {timeout} seconds"
         if partial_stderr:
             error_msg += f"\nStderr: {partial_stderr[:500]}"
         return ClaudeResponse(
@@ -208,7 +213,7 @@ def run_claude(
         return ClaudeResponse(
             success=False,
             content="",
-            error=f"Unexpected error running Claude: {str(e)}",
+            error=f"Unexpected error running CCS: {str(e)}",
         )
 
 
@@ -220,10 +225,11 @@ def run_claude_streaming(
     continue_session: bool = False,
     session_id: str | None = None,
     verbose: bool = True,
+    ccs_profile: str = "glm",
 ) -> ClaudeResponse:
     """
     Run Claude Code CLI with streaming output for real-time progress display.
-    
+
     Args:
         prompt: The prompt to send to Claude
         model: Model to use (default: sonnet)
@@ -232,16 +238,17 @@ def run_claude_streaming(
         continue_session: Whether to continue the last session
         session_id: Specific session ID to resume
         verbose: Whether to print streaming output (default: True)
-        
+        ccs_profile: CCS profile to use (default: "glm")
+
     Returns:
         ClaudeResponse with the result
     """
-    # Check if claude CLI is available
-    if not shutil.which("claude"):
+    # Check if ccs CLI is available
+    if not shutil.which("ccs"):
         return ClaudeResponse(
             success=False,
             content="",
-            error="Claude CLI not found. Please install Claude Code first.",
+            error="CCS CLI not found. Please install CCS first: npm install -g @kaitranntt/ccs",
         )
     
     cmd = build_command(
@@ -251,9 +258,10 @@ def run_claude_streaming(
         allowed_tools=allowed_tools,
         continue_session=continue_session,
         session_id=session_id,
+        ccs_profile=ccs_profile,
     )
     
-    print(f"[ClaudeRunner] Executing with streaming: {' '.join(cmd[:5])}...")
+    print(f"[CCSRunner] Executing with streaming: {' '.join(cmd[:5])}...")
     
     try:
         process = subprocess.Popen(
@@ -294,7 +302,7 @@ def run_claude_streaming(
                 return ClaudeResponse(
                     success=False,
                     content="",
-                    error=f"Claude command timed out after {timeout} seconds of inactivity",
+                    error=f"CCS command timed out after {timeout} seconds of inactivity",
                 )
             
             # Read a line with a short timeout
@@ -406,14 +414,14 @@ def run_claude_streaming(
         return ClaudeResponse(
             success=False,
             content="",
-            error="Claude returned empty output",
+            error="CCS returned empty output",
         )
         
     except Exception as e:
         return ClaudeResponse(
             success=False,
             content="",
-            error=f"Unexpected error running Claude: {str(e)}",
+            error=f"Unexpected error running CCS: {str(e)}",
         )
 
 
@@ -422,16 +430,18 @@ def run_news_aggregator(
     model: str = "sonnet",
     timeout: int = 300,
     streaming: bool = True,
+    ccs_profile: str = "glm",
 ) -> ClaudeResponse:
     """
     Run the news aggregator skill with the given preset prompt.
-    
+
     Args:
         preset_prompt: The preset prompt to trigger news aggregation
         model: Model to use
         timeout: Command timeout in seconds
         streaming: Whether to use streaming output (default: True)
-        
+        ccs_profile: CCS profile to use (default: "glm")
+
     Returns:
         ClaudeResponse with news content
     """
@@ -441,18 +451,20 @@ def run_news_aggregator(
             model=model,
             timeout=timeout,
             verbose=True,
+            ccs_profile=ccs_profile,
         )
     else:
         return run_claude(
             prompt=preset_prompt,
             model=model,
             timeout=timeout,
+            ccs_profile=ccs_profile,
         )
 
 
 if __name__ == "__main__":
-    # Test the Claude runner
-    print("Testing Claude runner with streaming...")
+    # Test the CCS runner
+    print("Testing CCS runner with streaming...")
     response = run_claude_streaming("Say hello in one sentence.", model="sonnet", timeout=60)
     print(f"\nSuccess: {response.success}")
     print(f"Content: {response.content[:200] if response.content else 'None'}...")

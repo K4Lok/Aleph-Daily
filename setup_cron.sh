@@ -69,14 +69,14 @@ check_dependencies() {
     fi
     echo_success "pip3 found"
 
-    # Check Claude CLI
-    if ! command_exists claude; then
-        echo_warning "Claude CLI not found in PATH."
-        echo_warning "Please install Claude Code CLI first:"
-        echo_warning "  npm install -g @anthropic-ai/claude-code"
+    # Check CCS CLI
+    if ! command_exists ccs; then
+        echo_warning "CCS CLI not found in PATH."
+        echo_warning "Please install CCS first:"
+        echo_warning "  npm install -g @kaitranntt/ccs"
         exit 1
     fi
-    echo_success "Claude CLI found: $(claude --version 2>/dev/null || echo 'installed')"
+    echo_success "CCS CLI found: $(ccs --version 2>/dev/null || echo 'installed')"
 
     # Check Git
     if ! command_exists git; then

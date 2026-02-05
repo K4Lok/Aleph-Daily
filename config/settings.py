@@ -29,6 +29,9 @@ class Settings:
         # Claude settings
         self.claude_model: str = os.getenv("CLAUDE_MODEL", "sonnet")
 
+        # CCS settings
+        self.ccs_profile: str = os.getenv("CCS_PROFILE", "glm")
+
         # News settings
         self.news_preset: str = os.getenv("NEWS_PRESET", "ai_tech")
 

@@ -1,6 +1,6 @@
 # Daily News Collections
 
-Automated daily news aggregation using Claude Code and the `news-aggregator-skill`. Collects top news, sends to Telegram, and archives to GitHub.
+Automated daily news aggregation using CCS (with GLM model) and the `news-aggregator-skill`. Collects top news, sends to Telegram, and archives to GitHub.
 
 ## Quick Start
 
@@ -18,6 +18,22 @@ python scripts/daily_news.py
 
 ## Configuration
 
+### Prerequisites
+
+Install CCS (Claude Code Switch) for running with GLM LLM:
+
+```bash
+npm install -g @kaitranntt/ccs
+```
+
+Then configure your GLM API key:
+
+```bash
+ccs config
+```
+
+This opens the dashboard where you can configure your GLM profile.
+
 ### Environment Variables (`.env`)
 
 | Variable | Description | Required |
@@ -28,6 +44,7 @@ python scripts/daily_news.py
 | `GITHUB_REPO` | Repository in `username/repo` format | Yes (for GH) |
 | `GITHUB_BRANCH` | Branch to push to (default: `main`) | No |
 | `CLAUDE_MODEL` | Model to use: `sonnet`, `opus`, `haiku` | No |
+| `CCS_PROFILE` | CCS profile to use (default: `glm`) | No |
 | `NEWS_PRESET` | Default preset (see below) | No |
 | `GIT_USER_NAME` | Git commit author name | No |
 | `GIT_USER_EMAIL` | Git commit author email | No |
@@ -86,7 +103,7 @@ daily-news-collections/
 ├── scripts/
 │   ├── daily_news.py       # Main orchestrator
 │   ├── skill_manager.py    # Skill installation
-│   ├── claude_runner.py    # Claude CLI wrapper
+│   ├── claude_runner.py    # CCS CLI wrapper
 │   ├── telegram_sender.py  # Telegram integration
 │   └── github_pusher.py    # Git operations
 ├── config/

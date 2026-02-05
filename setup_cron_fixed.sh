@@ -75,15 +75,15 @@ check_dependencies() {
     fi
     echo_success "pip3 found"
 
-    # Check Claude CLI
-    CLAUDE_PATH=$(which claude 2>/dev/null || echo "")
-    if [ -z "$CLAUDE_PATH" ]; then
-        echo_warning "Claude CLI not found in PATH."
-        echo_warning "Please install Claude Code CLI first:"
-        echo_warning "  npm install -g @anthropic-ai/claude-code"
+    # Check CCS CLI
+    CCS_PATH=$(which ccs 2>/dev/null || echo "")
+    if [ -z "$CCS_PATH" ]; then
+        echo_warning "CCS CLI not found in PATH."
+        echo_warning "Please install CCS first:"
+        echo_warning "  npm install -g @kaitranntt/ccs"
         exit 1
     fi
-    echo_success "Claude CLI found at: $CLAUDE_PATH"
+    echo_success "CCS CLI found at: $CCS_PATH"
 
     # Check Git
     if ! command_exists git; then
@@ -173,7 +173,7 @@ fi
 # Get PATH for cron (includes homebrew, etc.)
 # This fixes the "Claude CLI not found" issue
 FULL_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-CLAUDE_BIN=$(which claude 2>/dev/null || echo "/opt/homebrew/bin/claude")
+CCS_BIN=$(which ccs 2>/dev/null || echo "/opt/homebrew/bin/ccs")
 
 # Remove existing cron jobs
 remove_existing_cron() {
@@ -234,7 +234,7 @@ show_summary() {
     echo ""
     echo "Project Path:  $SCRIPT_DIR"
     echo "Python Path:   $PYTHON_PATH"
-    echo "Claude Path:   $CLAUDE_BIN"
+    echo "CCS Path:      $CCS_BIN"
     echo "Log File:      $LOG_FILE"
     echo ""
     echo "Telegram Notifications:"

@@ -250,6 +250,7 @@ def main() -> int:
         model=model,
         timeout=args.timeout,
         streaming=use_streaming,
+        ccs_profile=settings.ccs_profile,
     )
     
     if not response.success:
